@@ -7,6 +7,7 @@ Based on:
     Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
+import math
 import torch
 import torch.nn.functional as F
 
@@ -51,75 +52,164 @@ class MinGRU(torch.nn.Module):
     and efficient log-space parallel implementations.
     """
 
-    def __init__(self, input_dims: int, hidden_dims: int):
-        super().__init__()
-        self.linear_z = torch.nn.Linear(input_dims, hidden_dims)
-        self.linear_h = torch.nn.Linear(input_dims, hidden_dims)
-
-    def forward(self, x: torch.Tensor, h: torch.Tensor):
-        """Forward function
-
-        When passed a three dimensional input/hidden value
-        array, the log-space parallel evaluation is invoked,
-        otherwise the sequential mode is called.
-
-        Both functions report equal values.
-
-        *Note* h is supposed to be already activated g(h0). This
-        is required if  `h0` contains negative values, as negative
-        values are not supported by this implementation. This is only
-        required for the initial hidden state, not any subsequent state.
+    def __init__(
+        self,
+        input_dims: int,
+        hidden_dims: int,
+        *,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        bias: bool = True,
+        batch_first: bool = True,
+        device: torch.device = None,
+        dtype: torch.dtype = None,
+    ):
+        """Initialize MinGRU
 
         Params:
-            x: (B,input_dims) or (B,S,input_dims) input values
-            h: (B,hidden_dims) or (B,1,hidden_dims) initial/previous hidden values
+            input_dims: number of input dimensions
+            hidden_dims: number of hidden dimensions
+            num_layers: number of layers. When > 1, the inputs
+                of layer l is the output of layer l-1
+            dropout: when > 0, applies dropout to inputs except
+                for last layer
+            bias: when true, linear transformations have a bias term
+            device: optional device
+            dtype: optional dtype
+        """
+
+        super().__init__()
+
+        assert batch_first, "Batch-first is currently required"
+
+        self.input_dims = input_dims
+        self.hidden_dims = hidden_dims
+        self.num_layers = num_layers
+        self.bias = bias
+        self.batch_first = True
+        self.dropout = dropout
+
+        dims_z = [input_dims] + [hidden_dims] * num_layers
+        dims_h = [input_dims] + [hidden_dims] * num_layers
+
+        factory_kwargs = {"device": device, "dtype": dtype, "bias": bias}
+
+        layers = []
+        for ind, outd in zip(dims_z[:-1], dims_z[1:]):
+            n = torch.nn.Linear(ind, outd, **factory_kwargs)
+            layers.append(self._init_linear(n))
+        self.linear_z = torch.nn.ModuleList(layers)
+
+        layers = []
+        for ind, outd in zip(dims_h[:-1], dims_h[1:]):
+            n = torch.nn.Linear(ind, outd, **factory_kwargs)
+            layers.append(self._init_linear(n))
+        self.linear_h = torch.nn.ModuleList(layers)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        h: torch.Tensor | None = None,
+        *,
+        return_all_outputs: bool = False,
+    ):
+        """Evaluate the MinGRU.
+
+        Params:
+            x: (B,S,input_dims) input of first layer
+            h: (L,B,1,hidden_dims) or expandable shape of initial hidden
+                values per layer.
 
         Returns:
-            hnext: (B,hidden_dims) or (B,S,hidden_dims) next hidden values.
+            h: (B,S,hidden_dims) or (L,B,S,hidden_dims) when `return_all_outputs` is true.
         """
-        nd_x = x.ndim
-        nd_h = h.ndim
 
-        if nd_x == 2 and nd_h == 2:
-            return self.forward_sequential(x, h)
-        elif nd_x == 3 and nd_h == 3:
-            return self.forward_parallel(x, h)
+        assert (
+            x.ndim == 3 and x.shape[-1] == self.input_dims
+        ), "x should be (B,S,input_dims)"
+
+        B, S, _ = x.shape
+        if h is None:
+            h = x.new_zeros((self.num_layers, B, 1, self.hidden_dims))
+            h = g(h)
         else:
-            raise ValueError(
-                "Input shapes should be either both 2 or both 3 dimensional"
-            )
+            h = h.expand(self.num_layers, B, 1, self.hidden_dims)
+            # Note, we don't apply h in this case, we assume it has been
+            # applied, otherwise we have inconsistencies between sequential
+            # and parallel mode.
 
-    def forward_sequential(self, x: torch.Tensor, h_prev: torch.Tensor):
+        fwdfn = self.forward_sequential if S == 1 else self.forward_parallel
+
+        inp = x
+        outs = []
+        for lidx, (lin_z, lin_h, h0) in enumerate(
+            zip(
+                self.linear_z,
+                self.linear_h,
+                h,
+            )
+        ):
+            out = fwdfn(inp, h0, lin_z, lin_h)
+            inp = out
+            if lidx < (self.num_layers - 1):
+                inp = torch.bernoulli(torch.full_like(out, 1 - self.dropout))
+            outs.append(out)
+
+        if return_all_outputs:
+            return torch.stack(outs, 0)
+        else:
+            return outs[-1]
+
+    def forward_sequential(
+        self,
+        x: torch.Tensor,
+        h: torch.Tensor,
+        lin_z: torch.nn.Linear,
+        lin_h: torch.nn.Linear,
+    ):
         """Sequential forward.
 
         Params:
-            x: (B,input_dims) input
-            h_prev: (B,hidden_dims) previous hidden dims
+            x: (B,1,input_dims) input
+            h: (B,1,hidden_dims) previous hidden dims
 
         Returns:
-            h: (B, hidden_dims) next hidden dims
+            h: (B,1,hidden_dims) next hidden dims
         """
-        z = torch.sigmoid(self.linear_z(x))
-        h_tilde = g(self.linear_h(x))
-        h_t = (1 - z) * h_prev + z * h_tilde
+        z = torch.sigmoid(lin_z(x))
+        h_tilde = g(lin_h(x))
+        h_t = (1 - z) * h + z * h_tilde
         return h_t
 
-    def forward_parallel(self, x: torch.Tensor, h_0: torch.Tensor):
+    def forward_parallel(
+        self,
+        x: torch.Tensor,
+        h: torch.Tensor,
+        lin_z: torch.nn.Linear,
+        lin_h: torch.nn.Linear,
+    ):
         """Parallel forward
 
         Params:
             x: (B,S,input_dims) input
-            h_0: (B,1,hidden_dims) initial hidden-state
+            h: (B,1,hidden_dims) initial hidden-state
 
         Returns:
             h: (B,S,hidden_dims) hidden states
         """
-        k = self.linear_z(x)
+        k = lin_z(x)
         log_z = -F.softplus(-k)  # log(z)
         log_coeffs = -F.softplus(k)  # log(1-z)
-        log_h_0 = h_0.log()
-        log_tilde_h = log_g(self.linear_h(x))
+        log_h_0 = h.log()
+        log_tilde_h = log_g(lin_h(x))
         h = parallel_scan_log(
             log_coeffs, torch.cat((log_h_0, log_z + log_tilde_h), dim=1)
         )
         return h[:, 1:]  # tail
+
+    def _init_linear(self, n: torch.nn.Linear):
+        stdv = 1.0 / math.sqrt(n.weight.size(1))
+        n.weight.data.uniform_(-stdv, stdv)
+        if n.bias is not None:
+            n.bias.data.uniform_(-stdv, stdv)
+        return n
