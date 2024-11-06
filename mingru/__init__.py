@@ -14,12 +14,20 @@ import torch.nn.functional as F
 
 def g(x: torch.Tensor):
     """Proposed activation function for h"""
-    return torch.where(x >= 0, x + 0.5, torch.sigmoid(x))
+    out = torch.empty_like(x)
+    mask = x >= 0
+    out[mask] = x[mask] + 0.5
+    out[~mask] = torch.sigmoid(x[~mask])
+    return out
 
 
 def log_g(x: torch.Tensor):
     """Proposed activation function for h in log-space"""
-    return torch.where(x >= 0, (x + 0.5).log(), -F.softplus(-x))
+    out = torch.empty_like(x)
+    mask = x >= 0
+    out[mask] = (x[mask] + 0.5).log()
+    out[~mask] = -F.softplus(-x[~mask])
+    return out
 
 
 def parallel_scan_log(log_a, log_b):
@@ -152,7 +160,7 @@ class MinGRU(torch.nn.Module):
             out = fwdfn(inp, h0, lin_z, lin_h)
             inp = out
             if lidx < (self.num_layers - 1):
-                inp = torch.bernoulli(torch.full_like(out, 1 - self.dropout))
+                inp = inp * torch.bernoulli(torch.full_like(out, 1 - self.dropout))
             outs.append(out)
 
         if return_all_outputs:
