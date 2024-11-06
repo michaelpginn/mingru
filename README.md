@@ -73,7 +73,7 @@ assert h.shape == (10, 128, 64)
 ```
 
 ### Selective Copying
-For a more complete example check the [selective_copying.py](./selective_copying.py) example, which attempts to learn to selectively pick specific tokens in order from a generated sequence.
+For a more complete example check the [selective_copying.py](./selective_copying.py), which attempts to learn to selectively pick specific tokens in order from a generated sequence.
 
 ```shell
 python selective_copying.py
