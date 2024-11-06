@@ -43,10 +43,18 @@ assert h.shape == (10, 128, 64)
 # For sequential prediction use
 data = torch.randn(10, 128, 3)
 h0 = torch.ones(10, 1, 64) * 0.5
-res = [h0]
+h = h0
+h_seq = []
 for i in range(128):
-    h = rnn(data[:, i : i + 1], res[-1])
-    res.append(h)
+    # For more than 1 layers we need all intermediate hidden states
+    # for next invocation
+    h = rnn(data[:, i : i + 1], h, return_all_outputs=True)
+    # However, we are usually interested in just the last one as output
+    h_seq.append(h[-1])
+h_seq = torch.cat(h_seq, 1)
+# same as
+h_par = rnn(data, h0)
+assert torch.allclose(h_seq, h_par)
 
 # Note, don't use all-zeros for initial hidden state, instead
 # use the activation function
