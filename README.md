@@ -28,7 +28,8 @@ import mingru
 # Instantiate
 rnn = mingru.MinGRU(input_dims=3, hidden_dims=64, num_layers=2)
 
-# Invoke without initial hidden state (will allocate zero hidden state)
+# Invoke without initial hidden state.
+# This will allocate 'zero' hidden state for each layer.
 h = rnn(torch.randn(10, 128, 3))
 assert h.shape == (10, 128, 64)
 
@@ -40,21 +41,30 @@ assert h.shape == (2, 10, 128, 64)
 h = rnn(torch.randn(10, 128, 3), h=torch.ones(10, 1, 64) * 0.5)
 assert h.shape == (10, 128, 64)
 
-# For sequential prediction use
+# For sequential/chunked iterative prediction use
 data = torch.randn(10, 128, 3)
 h0 = torch.ones(10, 1, 64) * 0.5
+h_seq = []
+pred = rnn.create_chunked_helper(h0)
+for i in range(data.shape[1]):
+    h = pred(data[:, i : i + 1])
+    h_seq.append(h)
+h_seq = torch.cat(h_seq, 1)
+h_par = rnn(data, h0)
+assert torch.allclose(h_seq, h_par, atol=1e-5)
+
+# Or without the chunked helper
 h = h0
 h_seq = []
-for i in range(128):
+for i in range(data.shape[1]):
     # For more than 1 layers we need all intermediate hidden states
     # for next invocation
     h = rnn(data[:, i : i + 1], h, return_all_outputs=True)
     # However, we are usually interested in just the last one as output
     h_seq.append(h[-1])
 h_seq = torch.cat(h_seq, 1)
-# same as
 h_par = rnn(data, h0)
-assert torch.allclose(h_seq, h_par)
+assert torch.allclose(h_seq, h_par, atol=1e-5)
 
 # Note, don't use all-zeros for initial hidden state, instead
 # use the activation function

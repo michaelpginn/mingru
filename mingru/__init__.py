@@ -168,6 +168,30 @@ class MinGRU(torch.nn.Module):
         else:
             return outs[-1]
 
+    def create_chunked_helper(self, h0: torch.Tensor = None):
+        """Returns a helper function for sequential evaluation of the RNN.
+
+        Params:
+            h0: (B,1,hidden_dims) or (L,B,1,hidden_dims) optional initial hidden state
+
+        Returns:
+            fn: A stateful closure that takes $x_t$ and calls the rnn with $x_t,h_{t-1}$,
+                reports $h_t$ and then updates its internal state to $h_t$.
+        """
+        state = [h0]
+
+        def forward(
+            x: torch.Tensor,
+            h: torch.Tensor = None,
+            return_all_outputs: bool = False,
+        ):
+            hin = state[-1] if h is None else h
+            h = self.forward(x, hin, return_all_outputs=True)
+            state[0] = h
+            return h if return_all_outputs else h[-1]
+
+        return forward
+
     def forward_sequential(
         self,
         x: torch.Tensor,
