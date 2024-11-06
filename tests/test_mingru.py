@@ -5,7 +5,7 @@ from mingru import MinGRU, g
 
 
 @pytest.mark.parametrize("num_layers", [1, 2, 3])
-def test_mingru2(num_layers):
+def test_mingru(num_layers):
 
     mingru = MinGRU(input_dims=3, hidden_dims=5, num_layers=num_layers)
 
