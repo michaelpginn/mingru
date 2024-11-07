@@ -129,7 +129,8 @@ class MinGRU(torch.nn.Module):
                 values per layer.
 
         Returns:
-            h: (B,S,hidden_dims) or (L,B,S,hidden_dims) when `return_all_outputs` is true.
+            h: (B,S,hidden_dims) or (L,B,S,hidden_dims) when
+                `return_all_outputs` is true.
         """
 
         assert (
@@ -177,11 +178,13 @@ class MinGRU(torch.nn.Module):
         """Returns a helper function for sequential evaluation of the RNN.
 
         Params:
-            h0: (B,1,hidden_dims) or (L,B,1,hidden_dims) optional initial hidden state
+            h0: (B,1,hidden_dims) or (L,B,1,hidden_dims) optional initial
+                hidden state
 
         Returns:
-            fn: A stateful closure that takes $x_t$ and calls the rnn with $x_t,h_{t-1}$,
-                reports $h_t$ and then updates its internal state to $h_t$.
+            fn: A stateful closure that takes $x_t$ and calls the rnn with
+                $x_t,h_{t-1}$, reports $h_t$ and then updates
+                its internal state to $h_t$.
         """
         state = [h0]
 
