@@ -142,7 +142,7 @@ class MinGRU(torch.nn.Module):
             h = g(h)
         else:
             h = h.expand(self.num_layers, B, 1, self.hidden_dims)
-            # Note, we don't apply h in this case, we assume it has been
+            # Note, we don't apply g() in this case, we assume it has been
             # applied, otherwise we have inconsistencies between sequential
             # and parallel mode.
 
@@ -159,8 +159,13 @@ class MinGRU(torch.nn.Module):
         ):
             out = fwdfn(inp, h0, lin_z, lin_h)
             inp = out
-            if lidx < (self.num_layers - 1):
-                inp = inp * torch.bernoulli(torch.full_like(out, 1 - self.dropout))
+            if (lidx < (self.num_layers - 1)) and (self.dropout > 0):
+                inp = inp * torch.bernoulli(
+                    torch.full_like(
+                        out,
+                        1 - self.dropout,
+                    )
+                )
             outs.append(out)
 
         if return_all_outputs:
