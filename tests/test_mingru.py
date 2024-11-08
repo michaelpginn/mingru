@@ -11,7 +11,7 @@ def test_mingru_basic():
     h0 = torch.zeros(1, 1, 5)
     x = torch.randn(1, 5, 1)
 
-    h = mingru.g(h0)  # <- don't forget the activation
+    h = mingru.functional.g(h0)  # <- don't forget the activation
     h_seq = []
     for i in range(5):
         h = rnn(x[:, i : i + 1], h, return_all_outputs=True)
@@ -19,7 +19,7 @@ def test_mingru_basic():
         h_seq.append(h[-1])
     h_seq = torch.cat(h_seq, 1)
 
-    h_par = rnn(x, mingru.g(h0))
+    h_par = rnn(x, mingru.functional.g(h0))
     assert h_par.shape == (1, 5, 5)
     assert torch.allclose(h_seq, h_par)
 
@@ -33,7 +33,7 @@ def test_mingru(num_layers):
     x = torch.randn(2, 5, 3)
 
     # sequential pattern
-    h = mingru.g(h0)
+    h = mingru.functional.g(h0)
     h_seq = []
     for i in range(x.shape[1]):
         # For more than 1 layers we need all intermediate hidden states
@@ -43,11 +43,11 @@ def test_mingru(num_layers):
         h_seq.append(h[-1])
     h_seq = torch.cat(h_seq, 1)
 
-    h_par = rnn(x, mingru.g(h0))
+    h_par = rnn(x, mingru.functional.g(h0))
     assert h_par.shape == (2, 5, 5)
     assert torch.allclose(h_seq, h_par)
 
-    h_par = rnn(x, mingru.g(h0), return_all_outputs=True)
+    h_par = rnn(x, mingru.functional.g(h0), return_all_outputs=True)
     assert h_par.shape == (num_layers, 2, 5, 5)
     assert torch.allclose(h_seq, h_par[-1])
 
@@ -62,12 +62,12 @@ def test_chucked_helper(num_layers):
 
     # using sequential helper
     h_seq = []
-    seqfn = rnn.create_chunked_helper(mingru.g(h0))
+    seqfn = rnn.create_chunked_helper(mingru.functional.g(h0))
     for i in range(x.shape[1]):
         h_seq.append(seqfn(x[:, i : i + 1]))
     h_seq = torch.cat(h_seq, 1)
 
-    h_par = rnn(x, mingru.g(h0))
+    h_par = rnn(x, mingru.functional.g(h0))
     assert torch.allclose(h_seq, h_par)
 
 
@@ -116,5 +116,5 @@ def test_interface():
 
     # Note, don't use all-zeros for initial hidden state, instead
     # use the activation function
-    h = rnn(torch.randn(10, 128, 3), mingru.g(torch.zeros(10, 1, 64)))
+    h = rnn(torch.randn(10, 128, 3), mingru.functional.g(torch.zeros(10, 1, 64)))
     assert h.shape == (10, 128, 64)
