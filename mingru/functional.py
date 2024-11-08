@@ -88,6 +88,19 @@ def mingru(
     bias_z: torch.Tensor | None = None,
     bias_h: torch.Tensor | None = None,
 ):
+    """Evaluate the MinGRU.
+
+    Params:
+        x: (B,S,input_dims) input
+        h: (B,1,hidden_dims) initial hidden-state
+        weight_z: weight of linear z-gate transform
+        weight_h: weight of linear h-transform
+        bias_z: optional bias term of z-gate
+        bias_h: optional bias term of h-transform
+
+    Returns:
+        h: (B,S,hidden_dims) hidden states
+    """
     S = x.shape[1]
     fn = mingru_sequential if S == 1 else mingru_parallel
     return fn(x, h, weight_z, weight_h, bias_z, bias_h)
