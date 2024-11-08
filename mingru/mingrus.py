@@ -9,17 +9,12 @@ Based on:
 
 import math
 import torch
-import torch.nn.functional as F
 
 from . import functional as mF
 
 
 class MinGRU(torch.nn.Module):
-    """Minimum GRU implementation proposed in 'Were RNNs All We Needed?'.
-
-    Based on the input shapes, automatically dispatches to sequential
-    and efficient log-space parallel implementations.
-    """
+    """Minimum GRU implementation proposed in 'Were RNNs All We Needed?'"""
 
     def __init__(
         self,
@@ -30,6 +25,8 @@ class MinGRU(torch.nn.Module):
         dropout: float = 0.0,
         bias: bool = True,
         batch_first: bool = True,
+        residual: bool = False,
+        layer_transforms: list[torch.nn.Module] | None = None,
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
@@ -43,6 +40,10 @@ class MinGRU(torch.nn.Module):
             dropout: when > 0, applies dropout to inputs except
                 for last layer
             bias: when true, linear transformations have a bias term
+            residual: when true, adds residual connections between layers
+            layer_transforms: a list of transforms applied to outputs of each
+                layer except last. The transform is applied before residual
+                connections and before dropout.
             device: optional device
             dtype: optional dtype
         """
@@ -50,6 +51,7 @@ class MinGRU(torch.nn.Module):
         super().__init__()
 
         assert batch_first, "Batch-first is currently required"
+        assert layer_transforms is None or len(layer_transforms) in [1, num_layers - 1]
 
         self.input_dims = input_dims
         self.hidden_dims = hidden_dims
@@ -57,6 +59,13 @@ class MinGRU(torch.nn.Module):
         self.bias = bias
         self.batch_first = True
         self.dropout = dropout
+        self.residual = residual
+
+        if layer_transforms is None:
+            layer_transforms = [torch.nn.Identity()] * num_layers
+        elif len(layer_transforms) == 1:
+            layer_transforms = layer_transforms * num_layers
+        self.layer_transforms = torch.nn.ModuleList(layer_transforms)
 
         dims_z = [input_dims] + [hidden_dims] * num_layers
         dims_h = [input_dims] + [hidden_dims] * num_layers
@@ -75,23 +84,28 @@ class MinGRU(torch.nn.Module):
             layers.append(self._init_linear(n))
         self.linear_h = torch.nn.ModuleList(layers)
 
+        self.input_residual_align = None
+        if self.residual:
+            self.input_residual_align = torch.nn.Linear(
+                input_dims, hidden_dims, **factory_kwargs
+            )
+
     def forward(
         self,
         x: torch.Tensor,
         h: torch.Tensor | None = None,
-        *,
-        return_all_outputs: bool = False,
     ):
         """Evaluate the MinGRU.
 
         Params:
             x: (B,S,input_dims) input of first layer
-            h: (L,B,1,hidden_dims) or expandable shape of initial hidden
-                values per layer.
+            h: (num_layers,B,1,hidden_dims) or any expandable shape of initial
+                /previous hidden values per layer.
 
         Returns:
-            h: (B,S,hidden_dims) or (L,B,S,hidden_dims) when
-                `return_all_outputs` is true.
+            out: (B,S,hidden_dims) outputs of the last layer
+            h: (num_layers,B,1,hidden_dims) containing the final hidden state
+                for the input sequence.
         """
 
         assert (
@@ -108,63 +122,56 @@ class MinGRU(torch.nn.Module):
             # applied, otherwise we have inconsistencies between sequential
             # and parallel mode.
 
+        # input to next layer
         inp = x
-        outs = []
-        for lidx, (lin_z, lin_h, h0) in enumerate(
+        final_hidden_per_layer = []
+
+        # hidden states across layers
+        for lidx, (lin_z, lin_h, h_prev, ltrans) in enumerate(
             zip(
                 self.linear_z,
                 self.linear_h,
                 h,
+                self.layer_transforms,
             )
         ):
+            # (B,S,hidden_dims)
             out = mF.mingru(
                 inp,
-                h0,
+                h_prev,
                 lin_z.weight,
                 lin_h.weight,
                 lin_z.bias,
                 lin_h.bias,
             )
-            inp = out
-            if (lidx < (self.num_layers - 1)) and (self.dropout > 0):
-                inp = inp * torch.bernoulli(
+
+            # Save final hidden state of layer
+            final_hidden_per_layer.append(out[:, -1:])
+
+            # Prepare output / next input
+            # 1. Apply layer transform if any
+            is_not_last = lidx < (self.num_layers - 1)
+            if is_not_last:
+                out = ltrans(out)
+
+            # 2. Add skip connection
+            if self.residual:
+                f = self.input_residual_align(inp) if lidx == 0 else inp
+                out = out + f
+
+            # 3. Apply dropout (except for last)
+            if is_not_last and (self.dropout > 0):
+                out = out * torch.bernoulli(
                     torch.full_like(
                         out,
                         1 - self.dropout,
                     )
                 )
-            outs.append(out)
 
-        if return_all_outputs:
-            return torch.stack(outs, 0)
-        else:
-            return outs[-1]
+            # Next input is previous output
+            inp = out
 
-    def create_chunked_helper(self, h0: torch.Tensor = None):
-        """Returns a helper function for sequential evaluation of the RNN.
-
-        Params:
-            h0: (B,1,hidden_dims) or (L,B,1,hidden_dims) optional initial
-                hidden state
-
-        Returns:
-            fn: A stateful closure that takes $x_t$ and calls the rnn with
-                $x_t,h_{t-1}$, reports $h_t$ and then updates
-                its internal state to $h_t$.
-        """
-        state = [h0]
-
-        def forward(
-            x: torch.Tensor,
-            h: torch.Tensor = None,
-            return_all_outputs: bool = False,
-        ):
-            hin = state[-1] if h is None else h
-            h = self.forward(x, hin, return_all_outputs=True)
-            state[0] = h
-            return h if return_all_outputs else h[-1]
-
-        return forward
+        return out, torch.stack(final_hidden_per_layer)
 
     def _init_linear(self, n: torch.nn.Linear):
         stdv = 1.0 / math.sqrt(n.weight.size(1))
