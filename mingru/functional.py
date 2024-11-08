@@ -34,10 +34,8 @@ def log_g(x: torch.Tensor):
 def mingru_sequential(
     x: torch.Tensor,
     h: torch.Tensor,
-    weight_z: torch.Tensor,
-    weight_h: torch.Tensor,
-    bias_z: torch.Tensor | None = None,
-    bias_h: torch.Tensor | None = None,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None = None,
 ):
     """Sequential forward.
 
@@ -48,8 +46,10 @@ def mingru_sequential(
     Returns:
         h: (B,1,hidden_dims) next hidden dims
     """
-    z = torch.sigmoid(F.linear(x, weight_z, bias_z))
-    h_tilde = g(F.linear(x, weight_h, bias_h))
+    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=-1)
+
+    z = torch.sigmoid(gate)
+    h_tilde = g(hidden)
     h_t = (1 - z) * h + z * h_tilde
     return h_t
 
@@ -57,10 +57,8 @@ def mingru_sequential(
 def mingru_parallel(
     x: torch.Tensor,
     h: torch.Tensor,
-    weight_z: torch.Tensor,
-    weight_h: torch.Tensor,
-    bias_z: torch.Tensor | None = None,
-    bias_h: torch.Tensor | None = None,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None = None,
 ):
     """Parallel forward
 
@@ -71,39 +69,40 @@ def mingru_parallel(
     Returns:
         h: (B,S,hidden_dims) hidden states
     """
-    k = F.linear(x, weight_z, bias_z)
-    log_z = -F.softplus(-k)  # log(z)
-    log_coeffs = -F.softplus(k)  # log(1-z)
+
+    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=-1)
+
+    log_z = -F.softplus(-gate)  # log(z)
+    log_coeffs = -F.softplus(gate)  # log(1-z)
     log_h_0 = h.log()
-    log_tilde_h = log_g(F.linear(x, weight_h, bias_h))
-    h = parallel_scan_log(log_coeffs, torch.cat((log_h_0, log_z + log_tilde_h), dim=1))
+    log_tilde_h = log_g(hidden)
+    h = parallel_scan_log(
+        log_coeffs,
+        torch.cat((log_h_0, log_z + log_tilde_h), dim=1),
+    )
     return h[:, 1:]  # tail
 
 
 def mingru(
     x: torch.Tensor,
     h: torch.Tensor,
-    weight_z: torch.Tensor,
-    weight_h: torch.Tensor,
-    bias_z: torch.Tensor | None = None,
-    bias_h: torch.Tensor | None = None,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None = None,
 ):
     """Evaluate the MinGRU.
 
     Params:
         x: (B,S,input_dims) input
         h: (B,1,hidden_dims) initial hidden-state
-        weight_z: weight of linear z-gate transform
-        weight_h: weight of linear h-transform
-        bias_z: optional bias term of z-gate
-        bias_h: optional bias term of h-transform
+        weight: weights of linear z-gate and hidden transform combined
+        bias: optional bias term of z-gate and hidden transform combined
 
     Returns:
         h: (B,S,hidden_dims) hidden states
     """
     S = x.shape[1]
     fn = mingru_sequential if S == 1 else mingru_parallel
-    return fn(x, h, weight_z, weight_h, bias_z, bias_h)
+    return fn(x, h, weight, bias)
 
 
 __all__ = ["mingru", "g", "log_g"]

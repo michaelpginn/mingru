@@ -67,22 +67,16 @@ class MinGRU(torch.nn.Module):
             layer_transforms = layer_transforms * num_layers
         self.layer_transforms = torch.nn.ModuleList(layer_transforms)
 
-        dims_z = [input_dims] + [hidden_dims] * num_layers
-        dims_h = [input_dims] + [hidden_dims] * num_layers
+        dims = [input_dims] + [hidden_dims] * num_layers
 
         factory_kwargs = {"device": device, "dtype": dtype, "bias": bias}
 
         layers = []
-        for ind, outd in zip(dims_z[:-1], dims_z[1:]):
-            n = torch.nn.Linear(ind, outd, **factory_kwargs)
+        for ind, outd in zip(dims[:-1], dims[1:]):
+            # combine linear gate and hidden transform
+            n = torch.nn.Linear(ind, outd * 2, **factory_kwargs)
             layers.append(self._init_linear(n))
-        self.linear_z = torch.nn.ModuleList(layers)
-
-        layers = []
-        for ind, outd in zip(dims_h[:-1], dims_h[1:]):
-            n = torch.nn.Linear(ind, outd, **factory_kwargs)
-            layers.append(self._init_linear(n))
-        self.linear_h = torch.nn.ModuleList(layers)
+        self.linear_gate_hidden = torch.nn.ModuleList(layers)
 
         self.input_residual_align = None
         if self.residual:
@@ -127,23 +121,15 @@ class MinGRU(torch.nn.Module):
         final_hidden_per_layer = []
 
         # hidden states across layers
-        for lidx, (lin_z, lin_h, h_prev, ltrans) in enumerate(
+        for lidx, (linear, h_prev, ltrans) in enumerate(
             zip(
-                self.linear_z,
-                self.linear_h,
+                self.linear_gate_hidden,
                 h,
                 self.layer_transforms,
             )
         ):
             # (B,S,hidden_dims)
-            out = mF.mingru(
-                inp,
-                h_prev,
-                lin_z.weight,
-                lin_h.weight,
-                lin_z.bias,
-                lin_h.bias,
-            )
+            out = mF.mingru(inp, h_prev, linear.weight, linear.bias)
 
             # Save final hidden state of layer
             final_hidden_per_layer.append(out[:, -1:])
