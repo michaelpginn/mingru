@@ -55,17 +55,19 @@ class SelectiveCopyingModel(torch.nn.Module):
     def __init__(self, cfg: dict):
         super().__init__()
         self.emb = torch.nn.Embedding(cfg["vocab_size"], cfg["emb_dims"])
+
         self.rnn = mingru.MinGRU(
             input_dims=cfg["emb_dims"],
             hidden_dims=cfg["hidden_dims"],
             num_layers=cfg["num_layers"],
+            residual=True,
         )
         self.logits = torch.nn.Linear(cfg["hidden_dims"], cfg["vocab_size"])
         self.cfg = cfg
 
     def forward(self, x: torch.Tensor):
-        h = self.rnn(self.emb(x))
-        return self.logits(h)[:, -self.cfg["num_memorize"] :]
+        out, h = self.rnn(self.emb(x))
+        return self.logits(out)[:, -self.cfg["num_memorize"] :]
 
 
 def train(cfg: dict):
@@ -140,7 +142,7 @@ if __name__ == "__main__":
         "hidden_dims": 64,
         "num_layers": 3,
         "batch_size": 64,
-        "num_steps": 1500,
+        "num_steps": 2500,
         "lr": 1e-3,
     }
 
