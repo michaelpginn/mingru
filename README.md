@@ -10,6 +10,8 @@ Currently the following features are implemented and tested:
  - **Multilayer**: Stack multiple MinGRU layers via `num_layers=` arguments. When `num_layers>1`, the output hidden states of layer $i$ are passed as inputs to $i+1$.
  - **Dropout**: Via parameter `dropout=`, when > 0 all inputs of each layer are effected except for the last layer.
  - **Bias**: Biases in linear layers can be enabled and disabled via the `bias=` argument.
+ - **Residuals**: Residual connections betweeen outputs of minGRU layers via `residual=` argument.
+ - **Transforms**: Custom (shared) transforms betweeen outputs of minGRU layers via `layer_transforms=` argument.
  - **Compatibility**: Interface of *mingru* is mostly compatible with that of `torch.nn.GRU`, except that bi-directional and sequence-first arguments are not supported.
 
 ## Installation
