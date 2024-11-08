@@ -78,9 +78,6 @@ def train(cfg: dict):
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg["lr"])
     for step in range(cfg["num_steps"]):
-        step_loss = 0
-        correct = 0
-        total = 0
         inputs, targets = torch_copying_data(
             cfg["seq_len"],
             cfg["num_memorize"],
@@ -97,9 +94,9 @@ def train(cfg: dict):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        step_loss += loss.item()
-        total += targets.size(0) * targets.size(1)
-        correct += (outputs.argmax(1) == targets).sum().item()
+        step_loss = loss.item()
+        total = targets.size(0) * targets.size(1)
+        correct = (outputs.argmax(1) == targets).sum().item()
         accuracy = 100 * correct / total
         if step % 20 == 0:
             print(
