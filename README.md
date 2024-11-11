@@ -11,6 +11,7 @@ Currently the following features are implemented and tested:
  - **Dropout**: Via parameter `dropout=`, when > 0 all inputs of each layer are effected except for the last layer.
  - **Bias**: Biases in linear layers can be enabled and disabled via the `bias=` argument.
  - **Residuals**: Residual connections betweeen outputs of minGRU layers via `residual=` argument.
+ - **Scripting**: MinGRU is compatible with `torch.jit.script`.
  - **Compatibility**: Interface of *mingru* is mostly compatible with that of `torch.nn.GRU`, except that bi-directional and sequence-first arguments are not supported.
 
 ## Installation
