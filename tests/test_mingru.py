@@ -93,3 +93,27 @@ def test_interface():
 
     # Note, don't use <= 0 for initial hidden state, instead
     h0 = mingru.functional.g(torch.zeros(10, 1, 64))
+
+
+def test_scripting():
+    rnn = mingru.MinGRU(
+        input_dims=2,
+        hidden_dims=5,
+        num_layers=2,
+        dropout=0.0,
+        residual=True,
+    )
+    x, h = torch.randn(1, 128, 2), mingru.functional.g(torch.randn(1, 1, 5))
+    rnn_out, rnn_h = rnn(x, h)
+
+    scripted = torch.jit.script(rnn)
+    scripted_out, scripted_h = scripted(x, h)
+
+    assert torch.allclose(scripted_out, rnn_out, atol=1e-4)
+    assert torch.allclose(scripted_h, rnn_h, atol=1e-4)
+
+    scripted_out, scripted_h = scripted(x)
+    rnn_out, rnn_h = rnn(x)
+
+    assert torch.allclose(scripted_out, rnn_out, atol=1e-4)
+    assert torch.allclose(scripted_h, rnn_h, atol=1e-4)

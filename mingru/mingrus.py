@@ -7,6 +7,7 @@ Based on:
     Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
+from typing import Final
 import math
 import torch
 
@@ -15,6 +16,12 @@ from . import functional as mF
 
 class MinGRU(torch.nn.Module):
     """Minimum GRU implementation proposed in 'Were RNNs All We Needed?'"""
+
+    num_layers: Final[int]
+    input_dims: Final[int]
+    hidden_dims: Final[int]
+    dropout: Final[float]
+    residual: Final[bool]
 
     def __init__(
         self,
@@ -26,7 +33,6 @@ class MinGRU(torch.nn.Module):
         bias: bool = True,
         batch_first: bool = True,
         residual: bool = False,
-        layer_transforms: list[torch.nn.Module] | None = None,
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
@@ -41,9 +47,6 @@ class MinGRU(torch.nn.Module):
                 for last layer
             bias: when true, linear transformations have a bias term
             residual: when true, adds residual connections between layers
-            layer_transforms: a list of transforms applied to outputs of each
-                layer except last. The transform is applied before residual
-                connections and before dropout.
             device: optional device
             dtype: optional dtype
         """
@@ -51,21 +54,13 @@ class MinGRU(torch.nn.Module):
         super().__init__()
 
         assert batch_first, "Batch-first is currently required"
-        assert layer_transforms is None or len(layer_transforms) in [1, num_layers - 1]
 
         self.input_dims = input_dims
         self.hidden_dims = hidden_dims
         self.num_layers = num_layers
         self.bias = bias
-        self.batch_first = True
         self.dropout = dropout
         self.residual = residual
-
-        if layer_transforms is None:
-            layer_transforms = [torch.nn.Identity()] * num_layers
-        elif len(layer_transforms) == 1:
-            layer_transforms = layer_transforms * num_layers
-        self.layer_transforms = torch.nn.ModuleList(layer_transforms)
 
         dims = [input_dims] + [hidden_dims] * num_layers
 
@@ -121,31 +116,22 @@ class MinGRU(torch.nn.Module):
         final_hidden_per_layer = []
 
         # hidden states across layers
-        for lidx, (linear, h_prev, ltrans) in enumerate(
-            zip(
-                self.linear_gate_hidden,
-                h,
-                self.layer_transforms,
-            )
-        ):
+        for lidx, linear in enumerate(self.linear_gate_hidden):
+            h_prev = h[lidx]
+
             # (B,S,hidden_dims)
             out = mF.mingru(inp, h_prev, linear.weight, linear.bias)
 
             # Save final hidden state of layer
             final_hidden_per_layer.append(out[:, -1:])
 
-            # Prepare output / next input
-            # 1. Apply layer transform if any
-            is_not_last = lidx < (self.num_layers - 1)
-            if is_not_last:
-                out = ltrans(out)
-
-            # 2. Add skip connection
+            # Add skip connection
             if self.residual:
                 f = self.input_residual_align(inp) if lidx == 0 else inp
                 out = out + f
 
-            # 3. Apply dropout (except for last)
+            # Apply dropout (except for last)
+            is_not_last = lidx < (self.num_layers - 1)
             if is_not_last and (self.dropout > 0):
                 out = out * torch.bernoulli(
                     torch.full_like(

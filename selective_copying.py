@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import torch.nn.functional as F
-
+from typing import Final
 import mingru
 
 
@@ -52,6 +52,8 @@ def torch_copying_data(
 
 
 class SelectiveCopyingModel(torch.nn.Module):
+    num_memorize: Final[int]
+
     def __init__(self, cfg: dict):
         super().__init__()
         self.emb = torch.nn.Embedding(cfg["vocab_size"], cfg["emb_dims"])
@@ -63,11 +65,11 @@ class SelectiveCopyingModel(torch.nn.Module):
             residual=True,
         )
         self.logits = torch.nn.Linear(cfg["hidden_dims"], cfg["vocab_size"])
-        self.cfg = cfg
+        self.num_memorize = cfg["num_memorize"]
 
     def forward(self, x: torch.Tensor):
         out, h = self.rnn(self.emb(x))
-        return self.logits(out)[:, -self.cfg["num_memorize"] :]
+        return self.logits(out)[:, -self.num_memorize :]
 
 
 def train(cfg: dict):
@@ -139,9 +141,11 @@ if __name__ == "__main__":
         "hidden_dims": 64,
         "num_layers": 3,
         "batch_size": 64,
-        "num_steps": 2500,
+        "num_steps": 2000,
         "lr": 1e-3,
     }
-
     model = train(cfg)
-    validate(cfg, model)
+
+    # Script and eval the model
+    scripted = torch.jit.script(model)
+    validate(cfg, scripted)

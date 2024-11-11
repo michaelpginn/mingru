@@ -101,8 +101,10 @@ def mingru(
         h: (B,S,hidden_dims) hidden states
     """
     S = x.shape[1]
-    fn = mingru_sequential if S == 1 else mingru_parallel
-    return fn(x, h, weight, bias)
+    if S == 1:
+        return mingru_sequential(x, h, weight, bias)
+    else:
+        return mingru_parallel(x, h, weight, bias)
 
 
 __all__ = ["mingru", "g", "log_g"]
