@@ -1,5 +1,6 @@
 import pytest
 import torch
+import io
 
 import mingru
 
@@ -117,3 +118,15 @@ def test_scripting():
 
     assert torch.allclose(scripted_out, rnn_out, atol=1e-4)
     assert torch.allclose(scripted_h, rnn_h, atol=1e-4)
+
+    # Save load
+    buffer = io.BytesIO()
+    torch.jit.save(scripted, buffer)
+
+    buffer.seek(0)
+    loaded = torch.jit.load(buffer, map_location=torch.device("cpu"))
+    loaded_out, loaded_h = loaded(x)
+
+    rnn_out, rnn_h = rnn(x)
+    assert torch.allclose(loaded_out, rnn_out, atol=1e-4)
+    assert torch.allclose(loaded_h, rnn_h, atol=1e-4)
