@@ -54,10 +54,8 @@ data = torch.randn(B, S, I)
 h0 = torch.ones(L, B, 1, H) * 0.5
 h = h0
 out_seq = []
-out_hs = []
 for i in range(data.shape[1]):
     out, h = rnn(data[:, i : i + 1], h=h)
-    out_hs.append(h)
     out_seq.append(out)
 out_seq = torch.cat(out_seq, 1)
 assert out_seq.shape == (B, S, H)
