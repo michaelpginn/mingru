@@ -175,8 +175,6 @@ def conv_mingru_parallel(
     log_h_0 = h.log()
     log_tilde_h = log_g(hidden)
 
-    print(log_z.shape, log_coeffs.shape, log_tilde_h.shape, log_h_0.shape)
-
     h = parallel_scan_log(
         log_coeffs,
         torch.cat((log_h_0, log_z + log_tilde_h), dim=1),
