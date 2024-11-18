@@ -134,7 +134,7 @@ def conv_mingru_sequential(
 
     z = torch.sigmoid(gate)
     h_tilde = g(hidden)
-    h_t = (1 - z) * h + z * h_tilde
+    h_t = (1 - z) * h.squeeze(1) + z * h_tilde
     return h_t.unsqueeze(1)
 
 
