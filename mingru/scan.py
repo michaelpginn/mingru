@@ -17,6 +17,7 @@ def parallel_scan_log(log_a: torch.Tensor, log_b: torch.Tensor):
 
     Efficiently computes
         x_t = a_t*x_{t-1} + b_t
+    for non-negative numbers.
 
     Params:
         log_a: (B,T,N*) log-coefficients for timestep 1..T
