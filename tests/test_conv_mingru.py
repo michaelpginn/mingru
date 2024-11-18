@@ -21,6 +21,10 @@ def test_conv_mingru_functional():
         # For more than 1 layers we need all intermediate hidden states
         # for next invocation
         h = conv_mingru(x[:, i : i + 1], h, kernel, bias)
-        print(h.shape)
         out_seq.append(h)
     out_seq = torch.cat(out_seq, 1)
+
+    h = mingru.functional.g(h0)
+    out_par = conv_mingru(x, h, kernel, bias)
+
+    assert torch.allclose(out_par, out_seq, atol=1e-4)
