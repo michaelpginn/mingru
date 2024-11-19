@@ -7,6 +7,7 @@ Based on:
     Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
+from typing import Dict
 import torch
 import torch.nn.functional as F
 
@@ -32,7 +33,11 @@ def log_g(x: torch.Tensor):
 
 
 def to_gate_hidden_conv2d(
-    x: torch.Tensor, kernel: torch.Tensor, bias: torch.Tensor | None
+    x: torch.Tensor,
+    kernel: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: int = 1,
+    padding: str = "same",
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute gate and hidden outputs using 2D convolutional transform.
 
@@ -53,8 +58,8 @@ def to_gate_hidden_conv2d(
             x.view(B * S, input_dims, H, W),
             kernel,
             bias,
-            stride=1,
-            padding="same",
+            stride=stride,
+            padding=padding,
         )
         .view(B, S, out_dims, H, W)
         .chunk(2, dim=2)
@@ -63,7 +68,9 @@ def to_gate_hidden_conv2d(
 
 
 def to_gate_hidden_linear(
-    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute gate, hidden outputs using linear transform"""
     gate, hidden = F.linear(x, weight, bias).chunk(2, dim=2)
@@ -127,6 +134,8 @@ def mingru(
     h: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
+    stride: int = 1,
+    padding: str = "same",
 ):
     """Evaluate the (convolutional) MinGRU
 
@@ -154,7 +163,9 @@ def mingru(
     if x.ndim == 3:
         gate, hidden = to_gate_hidden_linear(x, weight, bias)
     elif x.ndim == 5:
-        gate, hidden = to_gate_hidden_conv2d(x, weight, bias)
+        gate, hidden = to_gate_hidden_conv2d(
+            x, weight, bias, stride=stride, padding=padding
+        )
     else:
         raise ValueError(f"Expected input dims to be either 3/5, found {x.ndim}.")
 
