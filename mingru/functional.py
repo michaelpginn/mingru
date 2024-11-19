@@ -31,51 +31,67 @@ def log_g(x: torch.Tensor):
     return out
 
 
-def mingru_sequential(
-    x: torch.Tensor,
-    h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
-):
-    """Sequential forward.
+def to_gate_hidden_conv2d(
+    x: torch.Tensor, kernel: torch.Tensor, bias: torch.Tensor | None
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute gate and hidden outputs using 2D convolutional transform.
 
     Params:
-        x: (B,1,input_dims) input
-        h: (B,1,hidden_dims) previous hidden dims
+        x: (B,S,input_dims,H,W) input tensor
+        kernel: (hidden_dims*2, input_dims, K, K) kernel
+        bias: (hidden_dims*2,) optional bias
 
     Returns:
-        h: (B,1,hidden_dims) next hidden dims
+        gate: (B,S,hidden_dims,H,W) gate outputs
+        hidden: (B,S,hidden_dims,H,W) hidden outputs
     """
-    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=-1)
+    B, S, input_dims, H, W = x.shape
+    out_dims = kernel.shape[0]
 
-    z = torch.sigmoid(gate)
-    h_tilde = g(hidden)
-    h_t = (1 - z) * h + z * h_tilde
-    return h_t
+    gate, hidden = (
+        F.conv2d(
+            x.view(B * S, input_dims, H, W),
+            kernel,
+            bias,
+            stride=1,
+            padding="same",
+        )
+        .view(B, S, out_dims, H, W)
+        .chunk(2, dim=2)
+    )
+    return gate, hidden
 
 
-def mingru_parallel(
-    x: torch.Tensor,
+def to_gate_hidden_linear(
+    x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute gate, hidden outputs using linear transform"""
+    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=2)
+    return gate, hidden
+
+
+def _mingru_parallel(
     h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
+    gate: torch.Tensor,
+    hidden: torch.Tensor,
 ):
     """Parallel forward
 
     Params:
-        x: (B,S,input_dims) input
-        h: (B,1,hidden_dims) initial hidden-state
+        x: (B,S,input_dims,H,W) input
+        h: (B,1,hidden_dims,H,W) initial hidden-state
+        kernel: (hidden_dims*2, input_dims, k1, k2)
+        bias: (hidden_dims*2,)
 
     Returns:
-        h: (B,S,hidden_dims) hidden states
+        h: (B,S,hidden_dims,H,W) hidden states
     """
-
-    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=-1)
 
     log_z = -F.softplus(-gate)  # log(z)
     log_coeffs = -F.softplus(gate)  # log(1-z)
     log_h_0 = h.log()
     log_tilde_h = log_g(hidden)
+
     h = parallel_scan_log(
         log_coeffs,
         torch.cat((log_h_0, log_z + log_tilde_h), dim=1),
@@ -83,35 +99,10 @@ def mingru_parallel(
     return h[:, 1:]  # tail
 
 
-def mingru(
-    x: torch.Tensor,
+def _mingru_sequential(
     h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
-):
-    """Evaluate the MinGRU.
-
-    Params:
-        x: (B,S,input_dims) input
-        h: (B,1,hidden_dims) initial hidden-state
-        weight: weights of linear z-gate and hidden transform combined
-        bias: optional bias term of z-gate and hidden transform combined
-
-    Returns:
-        h: (B,S,hidden_dims) hidden states
-    """
-    S = x.shape[1]
-    if S == 1:
-        return mingru_sequential(x, h, weight, bias)
-    else:
-        return mingru_parallel(x, h, weight, bias)
-
-
-def conv_mingru_sequential(
-    x: torch.Tensor,
-    h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
+    gate: torch.Tensor,
+    hidden: torch.Tensor,
 ):
     """Sequential forward.
 
@@ -124,86 +115,53 @@ def conv_mingru_sequential(
     Returns:
         h: (B,1,hidden_dims,H,W) next hidden dims
     """
-    gate, hidden = F.conv2d(
-        x.squeeze(1),
-        weight,
-        bias,
-        stride=1,
-        padding="same",
-    ).chunk(2, dim=1)
 
     z = torch.sigmoid(gate)
     h_tilde = g(hidden)
-    h_t = (1 - z) * h.squeeze(1) + z * h_tilde
-    return h_t.unsqueeze(1)
+    h_t = (1 - z) * h + z * h_tilde
+    return h_t
 
 
-def conv_mingru_parallel(
+def mingru(
     x: torch.Tensor,
     h: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None = None,
 ):
-    """Parallel forward
+    """Evaluate the (convolutional) MinGRU
+
+    This method is the main entry point to evaluate the MinGRU. It
+    combines support for linear and convolutional MinGRUs and is
+    scriptable.
+
+    The code dispatches to linear/convolutional transforms based
+    on the number of input dimensions 3/5. The code also dispatches
+    between sequential and parallel model depending on the size of
+    the sequence dimension.
 
     Params:
-        x: (B,S,input_dims,H,W) input
-        h: (B,1,hidden_dims,H,W) initial hidden-state
-        weight: (hidden_dims*2, input_dims, k1, k2)
-        bias: (hidden_dims*2,)
+        x: (B,S,input_dims) or (B,S,input_dims,H,W) input
+        h: (B,1,hidden_dims) or (B,1,hidden_dims,H,W) initial/previous
+            hidden state
+        weight: (hidden_dims*2, input_dims) or (hidden_dims*2, input_dims, K, K)
+            weights of linear/convolution z-gate and hidden transform combined
+        bias: (hidden_dims*2,) optional bias term of z-gate
+            and hidden transform combined
 
     Returns:
-        h: (B,S,hidden_dims,H,W) hidden states
+        h: (B,S,hidden_dims) or (B,S,hidden_dims,H,W) next hidden states
     """
-    B, S, input_dims, H, W = x.shape
-    hidden_dims = h.shape[2]
-
-    gate, hidden = (
-        F.conv2d(
-            x.view(B * S, input_dims, H, W),
-            weight,
-            bias,
-            stride=1,
-            padding="same",
-        )
-        .view(B, S, hidden_dims * 2, H, W)
-        .chunk(2, dim=2)
-    )
-
-    log_z = -F.softplus(-gate)  # log(z)
-    log_coeffs = -F.softplus(gate)  # log(1-z)
-    log_h_0 = h.log()
-    log_tilde_h = log_g(hidden)
-
-    h = parallel_scan_log(
-        log_coeffs,
-        torch.cat((log_h_0, log_z + log_tilde_h), dim=1),
-    )
-    return h[:, 1:]  # tail
-
-
-def conv_mingru(
-    x: torch.Tensor,
-    h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
-):
-    """Evaluate the MinGRU.
-
-    Params:
-        x: (B,S,input_dims,H,W) input
-        h: (B,1,hidden_dims,H,W) initial hidden-state
-        weight: weights of convolution z-gate and hidden transform combined
-        bias: optional bias term of z-gate and hidden transform combined
-
-    Returns:
-        h: (B,S,hidden_dims,H,W) hidden states
-    """
-    S = x.shape[1]
-    if S == 1:
-        return conv_mingru_sequential(x, h, weight, bias)
+    if x.ndim == 3:
+        gate, hidden = to_gate_hidden_linear(x, weight, bias)
+    elif x.ndim == 5:
+        gate, hidden = to_gate_hidden_conv2d(x, weight, bias)
     else:
-        return conv_mingru_parallel(x, h, weight, bias)
+        raise ValueError(f"Expected input dims to be either 3/5, found {x.ndim}.")
+
+    if x.shape[1] == 1:
+        return _mingru_sequential(h, gate, hidden)
+    else:
+        return _mingru_parallel(h, gate, hidden)
 
 
-__all__ = ["mingru", "conv_mingru", "g", "log_g"]
+__all__ = ["mingru", "g", "log_g"]
