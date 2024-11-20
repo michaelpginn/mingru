@@ -2,10 +2,6 @@
 
 Christoph Heind, 2024
 https://github.com/cheind/mingru
-
-Based on:
-    Were RNNs All We Needed?
-    Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
 import torch
@@ -20,11 +16,11 @@ def parallel_scan_log(log_a: torch.Tensor, log_b: torch.Tensor):
     for non-negative numbers.
 
     Params:
-        log_a: (B,T,N*) log-coefficients for timestep 1..T
-        log_b: (B,T+1,N*) log-values of b including x_0
+        log_a: (B,T,*) log-coefficients for timestep 1..T
+        log_b: (B,T+1,*) log-values of b including x_0
 
     Returns:
-        x: (B,T+1,N*) sequence values computed in parallel.
+        x: (B,T+1,*) sequence values computed in parallel.
 
     Based on:
         Efficient Parallelization of a Ubiquitous Sequential Computation
