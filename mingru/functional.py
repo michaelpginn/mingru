@@ -2,10 +2,6 @@
 
 Christoph Heind, 2024
 https://github.com/cheind/mingru
-
-Based on:
-    Were RNNs All We Needed?
-    Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
 import torch
@@ -14,8 +10,11 @@ import torch.nn.functional as F
 from .scan import parallel_scan_log
 
 
-def g(x: torch.Tensor):
-    """Proposed activation function for h"""
+def g(x: torch.Tensor) -> torch.Tensor:
+    """Activation function for hidden state
+    Ensures that g(h) is non-negative and hence avoids
+    complex numbers in log-space.
+    """
     out = torch.empty_like(x)
     mask = x >= 0
     out[mask] = x[mask] + 0.5
@@ -23,8 +22,11 @@ def g(x: torch.Tensor):
     return out
 
 
-def log_g(x: torch.Tensor):
-    """Proposed activation function for h in log-space"""
+def log_g(x: torch.Tensor) -> torch.Tensor:
+    """Log-activation function for hidden state
+    Ensures that g(h) is non-negative and hence avoids
+    complex numbers in log-space.
+    """
     out = torch.empty_like(x)
     mask = x >= 0
     out[mask] = (x[mask] + 0.5).log()
@@ -37,16 +39,22 @@ def _mingru_parallel(
     gate: torch.Tensor,
     hidden: torch.Tensor,
 ):
-    """Parallel forward
+    """Parallel MinGRU forward
+
+    This function takes gate and hidden outputs directly,
+    as MinGRU forward is equal for convolutional/standard
+    MinGRU from this point on.
+
+    This function works for any number of spatial dimensions,
+    which is indicated by `*` below.
 
     Params:
-        x: (B,S,input_dims,H,W) input
-        h: (B,1,hidden_dims,H,W) initial hidden-state
-        kernel: (hidden_dims*2, input_dims, k1, k2)
-        bias: (hidden_dims*2,)
+        h: (B,1,hidden_dims,*) previous hidden state
+        gate: (B,S,hidden_dims,*) gate outputs
+        hidden: (B,S,hidden_dims,*) hidden outputs
 
     Returns:
-        h: (B,S,hidden_dims,H,W) hidden states
+        h: (B,S,hidden_dims,*) hidden states
     """
 
     log_z = -F.softplus(-gate)  # log(z)
@@ -66,16 +74,22 @@ def _mingru_sequential(
     gate: torch.Tensor,
     hidden: torch.Tensor,
 ):
-    """Sequential forward.
+    """Sequential MinGRU forward.
+
+    This function takes gate and hidden outputs directly,
+    as MinGRU forward is equal for convolutional/standard
+    MinGRU from this point on.
+
+    This function works for any number of spatial dimensions,
+    which is indicated by `*` below.
 
     Params:
-        x: (B,1,input_dims,H,W) input
-        h: (B,1,hidden_dims,H,W) previous hidden dims
-        weight: (hidden_dims*2, input_dims, k1, k2)
-        bias: (hidden_dims*2,)
+        h: (B,1,hidden_dims,*) previous hidden state
+        gate: (B,1,hidden_dims,*) gate outputs
+        hidden: (B,1,hidden_dims,*) hidden outputs
 
     Returns:
-        h: (B,1,hidden_dims,H,W) next hidden dims
+        h: (B,1,hidden_dims,*) next hidden dims
     """
 
     z = torch.sigmoid(gate)
@@ -92,25 +106,18 @@ def mingru_gate_hidden(
     """Evaluate the (convolutional) MinGRU
 
     This method is the main entry point to evaluate the MinGRU. It
-    combines support for linear and convolutional MinGRUs and is
-    scriptable.
+    works for both convolutional and non-convolutional MinGRUS.
 
-    The code dispatches to linear/convolutional transforms based
-    on the number of input dimensions 3/5. The code also dispatches
-    between sequential and parallel model depending on the size of
-    the sequence dimension.
+    The code chooses sequential and parallel forward
+    depending on the size of the sequence dimension S.
 
     Params:
-        x: (B,S,input_dims) or (B,S,input_dims,H,W) input
-        h: (B,1,hidden_dims) or (B,1,hidden_dims,H,W) initial/previous
-            hidden state
-        weight: (hidden_dims*2, input_dims) or (hidden_dims*2, input_dims, K, K)
-            weights of linear/convolution z-gate and hidden transform combined
-        bias: (hidden_dims*2,) optional bias term of z-gate
-            and hidden transform combined
+        gate: (B,1,hidden_dims,*) gate outputs
+        hidden: (B,1,hidden_dims,*) hidden outputs
+        h: (B,1,hidden_dims,*) previous hidden state
 
     Returns:
-        h: (B,S,hidden_dims) or (B,S,hidden_dims,H,W) next hidden states
+        h: (B,S,hidden_dims,*) next hidden states
     """
 
     if gate.shape[1] == 1:
