@@ -2,10 +2,6 @@
 
 Christoph Heind, 2024
 https://github.com/cheind/mingru
-
-Based on:
-    Were RNNs All We Needed?
-    Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
 from typing import Final
@@ -15,15 +11,16 @@ import torch
 from . import functional as mF
 
 
+# Used for dynamic indexing of torch.nn.ModuleList during scripting.
 @torch.jit.interface
 class ModuleInterface(torch.nn.Module):
-    def forward(
-        self, input: torch.Tensor
-    ) -> torch.Tensor:  # `input` has a same name in Sequential forward
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         pass
 
 
 class MinGRUCell(torch.nn.Module):
+    """A minimal gated recurrent unit cell."""
+
     layer_sizes: Final[tuple[int, ...]]
 
     def __init__(
@@ -35,13 +32,22 @@ class MinGRUCell(torch.nn.Module):
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
+        """Initialize MinGRU cell.
+
+        Params:
+            input_size: number of expected features in input
+            hidden_size: number of features in hidden state
+            bias: If false, no bias weights will be allocated
+            device: optional device for linear layer
+            dtype: optional dtype for linear layer
+        """
         super().__init__()
 
         factory_kwargs = {"device": device, "dtype": dtype, "bias": bias}
 
         self.to_gate_hidden = torch.nn.Linear(
             input_size,
-            hidden_size * 2,
+            hidden_size * 2,  # Compute gate/hidden outputs in tandem
             **factory_kwargs,
         )
         self.layer_sizes = tuple([input_size, hidden_size])
@@ -51,6 +57,16 @@ class MinGRUCell(torch.nn.Module):
         x: torch.Tensor,
         h: torch.Tensor | None = None,
     ):
+        """Evaluate the MinGRU
+
+        Params:
+            x: (B,S,input_size) input features
+            h: (B,1,hidden_size) optional previous hidden state
+                features
+
+        Returns:
+            h': (B,1,hidden_size) next hidden state
+        """
         assert (
             x.ndim == 3 and x.shape[2] == self.layer_sizes[0]
         ), "x should be (B,S,input_size)"
@@ -64,10 +80,12 @@ class MinGRUCell(torch.nn.Module):
         return hnext
 
     def init_hidden_state(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns a 'zero' hidden state."""
         return mF.g(x.new_zeros(x.shape[0], 1, self.layer_sizes[-1]))
 
 
 class MinGRU(torch.nn.Module):
+    """A multi-layer minimal gated recurrent unit (MinGRU)."""
 
     layer_sizes: Final[tuple[int, ...]]
     num_layers: Final[int]
@@ -85,6 +103,22 @@ class MinGRU(torch.nn.Module):
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
+        """Initialize MinGRU cell.
+
+        Params:
+            input_size: number of expected features in input
+            hidden_sizes: list of number of features in each stacked hidden
+                state
+            bias: If false, no bias weights will be allocated in linear layers
+            dropout: If > 0, dropout will be applied to each layer input, except
+                for last layer.
+            residual: If true, residual connections will be added between each
+                layer. If the input/output sizes are different, linear
+                adjustment layers will be added.
+            device: optional device for linear layer
+            dtype: optional dtype for linear layer
+        """
+
         super().__init__()
 
         if isinstance(hidden_sizes, int):
@@ -137,15 +171,14 @@ class MinGRU(torch.nn.Module):
         """Evaluate the MinGRU.
 
         Params:
-            x: (B,S,input_size) input of first layer
-            h: optional list[(B,1,hidden_size)] previous/initial
-                hidden state of each layer. If not given a 'zero'
-                initial state is allocated.
+            x: (B,S,input_size) input features
+            h: optional list of tensors with shape (B,1,hidden_sizes[i])
+                containing previous hidden states.
 
         Returns:
-            out: (B,S,hidden_dims) outputs of the last layer
-            h: (num_layers,B,1,hidden_dims) containing the final hidden state
-                for the input sequence.
+            out: (B,S,hidden_sizes[-1]) outputs of the last layer
+            h': list of tensors with shape (B,1,hidden_sizes[i]) containing
+                next hidden states per layer.
         """
         assert (
             x.ndim == 3 and x.shape[2] == self.layer_sizes[0]
@@ -192,6 +225,7 @@ class MinGRU(torch.nn.Module):
         return out, next_hidden
 
     def init_hidden_state(self, x):
+        """Returns a list of 'zero' hidden states for each layer."""
         return [
             mF.g(x.new_zeros(x.shape[0], 1, hidden_size))
             for hidden_size in self.layer_sizes[1:]
@@ -199,6 +233,8 @@ class MinGRU(torch.nn.Module):
 
 
 class MinConv2dGRUCell(torch.nn.Module):
+    """A minimal convolutional gated recurrent unit cell."""
+
     layer_sizes: Final[tuple[int, ...]]
 
     def __init__(
@@ -213,6 +249,19 @@ class MinConv2dGRUCell(torch.nn.Module):
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
+        """Initialize convolutional MinGRU cell.
+
+        Params:
+            input_size: number of expected features in input
+            hidden_size: number of features in hidden state
+            kernel_size: kernel size of convolutional layer
+            stride: stride in convolutional layer
+            padding: padding in convolutional layer
+            bias: If false, no bias weights will be allocated
+            device: optional device for linear layer
+            dtype: optional dtype for linear layer
+        """
+
         super().__init__()
 
         factory_kwargs = {
@@ -236,6 +285,17 @@ class MinConv2dGRUCell(torch.nn.Module):
         x: torch.Tensor,
         h: torch.Tensor | None = None,
     ):
+        """Evaluate the convolutional MinGRU
+
+        Params:
+            x: (B,S,input_size,H,W) input features
+            h: (B,1,hidden_size,H',W') optional previous
+                hidden state features
+
+        Returns:
+            h': (B,1,hidden_size,H',W') next hidden state
+        """
+
         assert (
             x.ndim == 5 and x.shape[2] == self.layer_sizes[0]
         ), "x should be (B,S,input_size,H,W)"
@@ -260,37 +320,17 @@ class MinConv2dGRUCell(torch.nn.Module):
         B, S = x.shape[:2]
         with torch.no_grad():
             H, W = (
-                self.to_gate_hidden(x.flatten(0, 1))
-                .unflatten(
-                    0,
-                    (B, S),
+                self.to_gate_hidden(
+                    x[:1, :1].flatten(0, 1),
                 )
+                .unflatten(0, (1, 1))
                 .shape[3:]
             )
         return mF.g(x.new_zeros(x.shape[0], 1, self.layer_sizes[-1], H, W))
 
 
-class AlignConvBlock(torch.nn.Module):
-    def __init__(self, in_size: int, out_size: int, kernel: int, stride: int):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_size,
-            out_size,
-            kernel_size=kernel,
-            stride=stride,
-            bias=False,
-            padding="same",
-        )
-        self.in_size = in_size
-        self.out_size = out_size
-
-    def forward(self, x: torch.Tensor):
-        B, S, _, H, W = x.shape
-        x = self.conv(x.view(B * S, self.in_size, H, W)).view(B, S, self.out_size, H, W)
-        return x
-
-
 class MinConv2dGRU(torch.nn.Module):
+    """A multi-layer minimal convolutional gated recurrent unit (MinGRU)."""
 
     layer_sizes: Final[tuple[int, ...]]
     num_layers: Final[int]
@@ -311,6 +351,22 @@ class MinConv2dGRU(torch.nn.Module):
         device: torch.device = None,
         dtype: torch.dtype = None,
     ):
+        """Initialize convolutional MinGRU cell.
+
+        Params:
+            input_size: number of expected features in input
+            hidden_sizes: list containing the number of
+                output features per hidden layer.
+            kernel_sizes: kernel sizes per convolutional layer
+            strides: strides per convolutional layer
+            paddings: paddings per convolutional layer
+            residual: If true, skip connections between each layer
+                are added. If spatials or feature dimensions mismatch,
+                necessary alignment convolutions are added.
+            bias: If false, no bias weights will be allocated
+            device: optional device for linear layer
+            dtype: optional dtype for linear layer
+        """
         super().__init__()
 
         if isinstance(hidden_sizes, int):
@@ -414,15 +470,17 @@ class MinConv2dGRU(torch.nn.Module):
         """Evaluate the MinGRU.
 
         Params:
-            x: (B,S,input_size) input of first layer
-            h: optional list[(B,1,hidden_size)] previous/initial
-                hidden state of each layer. If not given a 'zero'
-                initial state is allocated.
+            x: (B,S,input_size,H,W) input of first layer
+            h: optional previous/initial hidden states per layer.
+                If not given a 'zero' initial state is allocated.
+                Shape per layer $i$ is given by (B,1,hidden_size[i],H',W'),
+                where W' and H' are determined by the convolution settings.
 
         Returns:
-            out: (B,S,hidden_dims) outputs of the last layer
-            h: (num_layers,B,1,hidden_dims) containing the final hidden state
-                for the input sequence.
+            out: (B,S,hidden_dims,H',W') outputs of the last layer
+            h': list of next hidden states per layer. Shape for layer $i$
+                is given by (B,1,hidden_size[i],H',W'), where spatial
+                dimensions are determined by convolutional settings.
         """
         assert (
             x.ndim == 5 and x.shape[2] == self.layer_sizes[0]
@@ -479,6 +537,10 @@ class MinConv2dGRU(torch.nn.Module):
     def init_hidden_state(self, x: torch.Tensor) -> list[torch.Tensor]:
         hs = []
         B = x.shape[0]
+        # We dynamically determine the required hidden shapes, to avoid
+        # fiddling with spatial dimension computation. This just uses
+        # the first sequence element from the first batch todo so, and hence
+        # should not lead to major performance impact.
         with torch.no_grad():
             # Cannot make the following a reusable function because
             # nn.Modules are not accepted as parameters in scripting...

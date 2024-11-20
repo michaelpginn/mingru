@@ -7,8 +7,6 @@ Convolutional MinGRU based on
 
 > Heindl, Christoph et al. "Convolutional MinGRU" (2024).
 
-
-
 ## Features
 In alignment with torch recurrent modules, **mingru** provides the following core modules
  - `mingru.MinGRUCell` single layer MinGRU
