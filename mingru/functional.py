@@ -1,13 +1,13 @@
-"""Torch MinGRU implementation
+"""PyTorch (convolutional) MinGRU reference implementation
 
 Christoph Heind, 2024
+https://github.com/cheind/mingru
 
 Based on:
     Were RNNs All We Needed?
     Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
-from typing import Dict
 import torch
 import torch.nn.functional as F
 
@@ -30,51 +30,6 @@ def log_g(x: torch.Tensor):
     out[mask] = (x[mask] + 0.5).log()
     out[~mask] = -F.softplus(-x[~mask])
     return out
-
-
-def to_gate_hidden_conv2d(
-    x: torch.Tensor,
-    kernel: torch.Tensor,
-    bias: torch.Tensor | None,
-    stride: int = 1,
-    padding: str = "same",
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute gate and hidden outputs using 2D convolutional transform.
-
-    Params:
-        x: (B,S,input_dims,H,W) input tensor
-        kernel: (hidden_dims*2, input_dims, K, K) kernel
-        bias: (hidden_dims*2,) optional bias
-
-    Returns:
-        gate: (B,S,hidden_dims,H,W) gate outputs
-        hidden: (B,S,hidden_dims,H,W) hidden outputs
-    """
-    B, S, input_dims, H, W = x.shape
-    out_dims = kernel.shape[0]
-
-    gate, hidden = (
-        F.conv2d(
-            x.view(B * S, input_dims, H, W),
-            kernel,
-            bias,
-            stride=stride,
-            padding=padding,
-        )
-        .view(B, S, out_dims, H, W)
-        .chunk(2, dim=2)
-    )
-    return gate, hidden
-
-
-def to_gate_hidden_linear(
-    x: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute gate, hidden outputs using linear transform"""
-    gate, hidden = F.linear(x, weight, bias).chunk(2, dim=2)
-    return gate, hidden
 
 
 def _mingru_parallel(
@@ -129,13 +84,10 @@ def _mingru_sequential(
     return h_t
 
 
-def mingru(
-    x: torch.Tensor,
+def mingru_gate_hidden(
+    gate: torch.Tensor,
+    hidden: torch.Tensor,
     h: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor | None = None,
-    stride: int = 1,
-    padding: str = "same",
 ):
     """Evaluate the (convolutional) MinGRU
 
@@ -160,19 +112,11 @@ def mingru(
     Returns:
         h: (B,S,hidden_dims) or (B,S,hidden_dims,H,W) next hidden states
     """
-    if x.ndim == 3:
-        gate, hidden = to_gate_hidden_linear(x, weight, bias)
-    elif x.ndim == 5:
-        gate, hidden = to_gate_hidden_conv2d(
-            x, weight, bias, stride=stride, padding=padding
-        )
-    else:
-        raise ValueError(f"Expected input dims to be either 3/5, found {x.ndim}.")
 
-    if x.shape[1] == 1:
+    if gate.shape[1] == 1:
         return _mingru_sequential(h, gate, hidden)
     else:
         return _mingru_parallel(h, gate, hidden)
 
 
-__all__ = ["mingru", "g", "log_g"]
+__all__ = ["mingru_gate_hidden", "g", "log_g"]

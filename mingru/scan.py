@@ -1,4 +1,4 @@
-"""Torch MinGRU implementation
+"""PyTorch (convolutional) MinGRU reference implementation
 
 Christoph Heind, 2024
 https://github.com/cheind/mingru

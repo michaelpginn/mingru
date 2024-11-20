@@ -1,7 +1,19 @@
-import torch
-import numpy as np
-import torch.nn.functional as F
+"""PyTorch (convolutional) MinGRU reference implementation
+
+Christoph Heind, 2024
+https://github.com/cheind/mingru
+
+Based on:
+    Were RNNs All We Needed?
+    Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
+"""
+
 from typing import Final
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+
 import mingru
 
 
@@ -59,12 +71,11 @@ class SelectiveCopyingModel(torch.nn.Module):
         self.emb = torch.nn.Embedding(cfg["vocab_size"], cfg["emb_dims"])
 
         self.rnn = mingru.MinGRU(
-            input_dims=cfg["emb_dims"],
-            hidden_dims=cfg["hidden_dims"],
-            num_layers=cfg["num_layers"],
+            input_size=cfg["emb_dims"],
+            hidden_sizes=cfg["hidden_sizes"],
             residual=True,
         )
-        self.logits = torch.nn.Linear(cfg["hidden_dims"], cfg["vocab_size"])
+        self.logits = torch.nn.Linear(cfg["hidden_sizes"][-1], cfg["vocab_size"])
         self.num_memorize = cfg["num_memorize"]
 
     def forward(self, x: torch.Tensor):
@@ -138,8 +149,7 @@ if __name__ == "__main__":
         "num_memorize": 4,
         "vocab_size": 6,
         "emb_dims": 4,
-        "hidden_dims": 64,
-        "num_layers": 3,
+        "hidden_sizes": [64, 64, 64],
         "batch_size": 64,
         "num_steps": 2000,
         "lr": 1e-3,
