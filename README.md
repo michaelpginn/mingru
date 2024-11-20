@@ -14,7 +14,7 @@ In alignment with torch recurrent modules, **mingru** provides the following cor
  - `mingru.MinConv2dGRUCell` single layer convolutional MinGRU
  - `mingru.MinConv2dGRU` multi-layer stacked convolutional MinGRU
 
-Each module supports the following features (if applicant to type)
+Each module supports the following features (if applicable to type)
  - **Parallel**: Efficient log-space parallel evaluation support plus sequential support for testing. Automatically dispatches to the most efficient implementation.
  - **Multilayer**: Stack multiple MinGRU layers via `hidden_sizes=` arguments. When `len(hidden_sizes)>1`, the output hidden states of layer $i$ are passed as inputs to $i+1$. Varying hidden sizes are supported.
  - **Dropout**: Via parameter `dropout=`, when > 0 all inputs of each layer are effected except for the last layer.
