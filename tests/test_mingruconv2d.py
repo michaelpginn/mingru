@@ -1,6 +1,5 @@
 import pytest
 import torch
-import io
 
 import mingru
 from tests.helpers import scriptable
@@ -22,7 +21,7 @@ def test_mingruconv2dcell():
 
     out_seq = []
     for i in range(x.shape[1]):
-        h = rnn(x[:, i : i + 1], h)
+        h = rnn(x[:, i : i + 1], h)  # NOQA
         assert h.shape == (2, 1, 5, 32, 32)
         out_seq.append(h)
     out_seq = torch.cat(out_seq, 1)
@@ -47,7 +46,7 @@ def test_mingruconv2dcell_downsample():
 
     out_seq = []
     for i in range(x.shape[1]):
-        h = rnn(x[:, i : i + 1], h)
+        h = rnn(x[:, i : i + 1], h)  # NOQA
         out_seq.append(h)
     out_seq = torch.cat(out_seq, 1)
 
@@ -91,7 +90,7 @@ def test_mingruconv2d(bias, residual):
 
     out_seq = []
     for i in range(x.shape[1]):
-        out, h = rnn(x[:, i : i + 1], h)
+        out, h = rnn(x[:, i : i + 1], h)  # NOQA
         out_seq.append(out)
     out_seq = torch.cat(out_seq, 1)
 

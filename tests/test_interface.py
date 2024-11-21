@@ -31,7 +31,7 @@ def test_mingru_interface():
     h = rnn.init_hidden_state(x)
     out_seq = []
     for i in range(x.shape[1]):
-        out, h = rnn(x[:, i : i + 1], h=h)
+        out, h = rnn(x[:, i : i + 1], h=h)  # NOQA
         out_seq.append(out)
     out_seq = torch.cat(out_seq, 1)
     assert out_seq.shape == (B, S, 64)
@@ -79,7 +79,7 @@ def test_mingru_conv_interface():
     h = rnn.init_hidden_state(x)
     out_seq = []
     for i in range(x.shape[1]):
-        out, h = rnn(x[:, i : i + 1], h=h)
+        out, h = rnn(x[:, i : i + 1], h=h)  # NOQA
         out_seq.append(out)
     out_seq = torch.cat(out_seq, 1)
     assert out_seq.shape == (B, S, 64, 8, 8)

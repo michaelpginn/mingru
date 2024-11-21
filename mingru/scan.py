@@ -26,7 +26,10 @@ def parallel_scan_log(log_a: torch.Tensor, log_b: torch.Tensor):
         Efficient Parallelization of a Ubiquitous Sequential Computation
         Franz A. Heinsen, 2023, https://arxiv.org/pdf/2311.06281
     """
-    a_star = F.pad(torch.cumsum(log_a, dim=1), [0] * (log_a.ndim - 2) * 2 + [1, 0])
+    a_star = F.pad(
+        torch.cumsum(log_a, dim=1),
+        [0] * (log_a.ndim - 2) * 2 + [1, 0],
+    )
     x0_plus_b_star = torch.logcumsumexp(log_b - a_star, dim=1)
     log_x = a_star + x0_plus_b_star
     return torch.exp(log_x)

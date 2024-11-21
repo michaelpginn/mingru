@@ -17,13 +17,15 @@ import torch.nn.functional as F
 import mingru
 
 
-# Taken from https://github.com/MinhZou/selective-copying-mamba/blob/main/data_generator.py
+# Taken from
+# https://github.com/MinhZou/selective-copying-mamba/blob/main/data_generator.py
 def torch_copying_data(
     L, M, A, variable=False, batch_shape=(), one_hot=False, reverse=False
 ):
     """
     Generate a dataset for a sequence copying task.
-    This code is adopted from the copying.py script in the S4 repository. The original code can be found at:
+    This code is adopted from the copying.py script in the S4 repository.
+    The original code can be found at:
     https://github.com/state-spaces/s4/blob/e757cef57d89e448c413de7325ed5601aceaac13/src/dataloaders/datasets/copying.py
 
     Params:
@@ -32,7 +34,8 @@ def torch_copying_data(
         A (int): Alphabet size
         variable (bool): If True, selective copying task
         batch_shape (tuple): Shape of the batch
-        one_hot (bool): If True, convert the input sequence into a one-hot encoded tensor
+        one_hot (bool): If True, convert the input sequence into a one-hot
+            encoded tensor
         reverse (bool): If True, reverse the order of the target sequence
 
     Returns:
@@ -42,7 +45,10 @@ def torch_copying_data(
     tokens = torch.randint(low=1, high=A - 1, size=batch_shape + (M,))
     if variable:
         total_batch = int(np.prod(batch_shape))
-        inds = torch.stack([torch.randperm(L + M)[:M] for _ in range(total_batch)], 0)
+        inds = torch.stack(
+            [torch.randperm(L + M)[:M] for _ in range(total_batch)],
+            0,
+        )
         inds = inds.reshape(batch_shape + (M,))
         inds, _ = inds.sort()
     else:
@@ -75,12 +81,15 @@ class SelectiveCopyingModel(torch.nn.Module):
             hidden_sizes=cfg["hidden_sizes"],
             residual=True,
         )
-        self.logits = torch.nn.Linear(cfg["hidden_sizes"][-1], cfg["vocab_size"])
+        self.logits = torch.nn.Linear(
+            cfg["hidden_sizes"][-1],
+            cfg["vocab_size"],
+        )
         self.num_memorize = cfg["num_memorize"]
 
     def forward(self, x: torch.Tensor):
         out, h = self.rnn(self.emb(x))
-        return self.logits(out)[:, -self.num_memorize :]
+        return self.logits(out)[:, -self.num_memorize :]  # NOQA
 
 
 def train(cfg: dict):
@@ -113,7 +122,7 @@ def train(cfg: dict):
         accuracy = 100 * correct / total
         if step % 20 == 0:
             print(
-                f'Step [{step+1}/{cfg["num_steps"]}], Loss: {step_loss/cfg["batch_size"]:.4f}, Accuracy: {accuracy:.2f}%'
+                f'Step [{step+1}/{cfg["num_steps"]}], Loss: {step_loss/cfg["batch_size"]:.4f}, Accuracy: {accuracy:.2f}%'  # NOQA
             )
 
     return model

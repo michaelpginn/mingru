@@ -1,6 +1,5 @@
 import pytest
 import torch
-import io
 
 import mingru
 from tests.helpers import scriptable
@@ -16,7 +15,7 @@ def test_mingrucell():
 
     out_seq = []
     for i in range(x.shape[1]):
-        h = rnn(x[:, i : i + 1], h)
+        h = rnn(x[:, i : i + 1], h)  # NOQA
         assert h.shape == (2, 1, 5)
         out_seq.append(h)
     out_seq = torch.cat(out_seq, 1)
@@ -50,7 +49,7 @@ def test_mingru(bias, residual):
 
     out_seq = []
     for i in range(x.shape[1]):
-        out, h = rnn(x[:, i : i + 1], h)
+        out, h = rnn(x[:, i : i + 1], h)  # NOQA
         assert h[0].shape == (2, 1, 3)
         assert h[1].shape == (2, 1, 5)
         out_seq.append(out)

@@ -110,8 +110,8 @@ class MinGRU(torch.nn.Module):
             hidden_sizes: list of number of features in each stacked hidden
                 state
             bias: If false, no bias weights will be allocated in linear layers
-            dropout: If > 0, dropout will be applied to each layer input, except
-                for last layer.
+            dropout: If > 0, dropout will be applied to each layer input,
+                except for last layer.
             residual: If true, residual connections will be added between each
                 layer. If the input/output sizes are different, linear
                 adjustment layers will be added.
@@ -152,7 +152,11 @@ class MinGRU(torch.nn.Module):
             layers.append(gh)
         return torch.nn.ModuleList(layers)
 
-    def _create_residual_align_layers(self, device: torch.device, dtype: torch.dtype):
+    def _create_residual_align_layers(
+        self,
+        device: torch.device,
+        dtype: torch.dtype,
+    ):
         factory_kwargs = {"device": device, "dtype": dtype, "bias": False}
         layers = []
         for ind, outd in zip(self.layer_sizes[:-1], self.layer_sizes[1:]):
@@ -205,7 +209,8 @@ class MinGRU(torch.nn.Module):
             # Add skip connection
             if self.residual:
                 # ModuleInterace is required to support dynamic indexing of
-                # ModuleLists. See https://github.com/pytorch/pytorch/issues/47496
+                # ModuleLists.
+                # See https://github.com/pytorch/pytorch/issues/47496
                 al: ModuleInterface = self.residual_layers[lidx]
                 out = out + al.forward(inp)
 
@@ -444,7 +449,8 @@ class MinConv2dGRU(torch.nn.Module):
         for lidx, (ind, outd) in enumerate(
             zip(self.layer_sizes[:-1], self.layer_sizes[1:])
         ):
-            # Need to deal with different input/output channels and spatial dims
+            # Need to deal with different input/output channels and spatial
+            # dims
             with torch.no_grad():
                 x = torch.randn(1, ind, 16, 16)
                 y = self.to_gate_hidden[lidx](x)
@@ -515,7 +521,8 @@ class MinConv2dGRU(torch.nn.Module):
             # Add skip connection
             if self.residual:
                 # ModuleInterace is required to support dynamic indexing of
-                # ModuleLists. See https://github.com/pytorch/pytorch/issues/47496
+                # ModuleLists.
+                # See https://github.com/pytorch/pytorch/issues/47496
                 al: ModuleInterface = self.residual_layers[lidx]
                 out = out + al.forward(inp.flatten(0, 1)).unflatten(0, (B, S))
 
@@ -545,7 +552,14 @@ class MinConv2dGRU(torch.nn.Module):
             # Cannot make the following a reusable function because
             # nn.Modules are not accepted as parameters in scripting...
             for lidx, gh in enumerate(self.to_gate_hidden):
-                y, _ = gh(x[:1, :1].flatten(0, 1)).unflatten(0, (1, 1)).chunk(2, dim=2)
+                y, _ = (
+                    gh(x[:1, :1].flatten(0, 1))
+                    .unflatten(
+                        0,
+                        (1, 1),
+                    )
+                    .chunk(2, dim=2)
+                )
                 h = mF.g(y.new_zeros(B, 1, y.shape[2], y.shape[3], y.shape[4]))
                 hs.append(h)
                 x = y
