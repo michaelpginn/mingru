@@ -9,6 +9,7 @@ Based on:
 """
 
 import warnings
+import logging
 from typing import Callable
 
 import numpy as np
@@ -24,6 +25,8 @@ import mingru
 
 warnings.filterwarnings("ignore")
 
+_logger = logging.getLogger("ucf101")
+
 
 class ToVideo(torch.nn.Module):
     def forward(self, data):
@@ -35,7 +38,7 @@ def get_train_transform():
     return v2.Compose(
         [
             ToVideo(),
-            v2.RandomResizedCrop(224),
+            v2.RandomResizedCrop(224, scale=(0.8, 1.0)),
             v2.RandomHorizontalFlip(),
             v2.ToDtype(torch.float, scale=True),
             v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
@@ -91,7 +94,7 @@ class UCF101Classifier(torch.nn.Module):
             strides=2,
             paddings=1,
             dropout=0.1,
-            residual=False,
+            residual=True,
             bias=True,
         )
 
@@ -141,13 +144,11 @@ def train(cfg):
     )
     crit = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(classifier.parameters(), lr=cfg["lr"])
-    sched = torch.optim.lr_scheduler.StepLR(
-        optimizer, cfg["num_train_steps"] // 2, gamma=0.1
-    )
+    sched = torch.optim.lr_scheduler.StepLR(optimizer, cfg["num_epochs"] - 2, gamma=0.1)
 
     step = 0
     best_acc = 0.0
-    while step < cfg["num_train_steps"]:
+    for epoch in range(cfg["num_epochs"]):
         for video, labels in dl_train:
             video = video.to(dev)
             labels = labels.to(dev)
@@ -156,23 +157,23 @@ def train(cfg):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            sched.step()
             correct = (logits.argmax(1) == labels).sum().item()
             accuracy = 100 * correct / len(logits)
             if step % 20 == 0:
-                print(
-                    f"Step {step+1}, Loss: {loss:.4f}, Accuracy: {accuracy:.2f}%"
-                )  # NOQA
+                _logger.info(
+                    f"Epoch {epoch+1}, Step {step+1}, Loss: {loss:.4f}, Accuracy: {accuracy:.2f}%"
+                )
             if (step + 1) % 200 == 0:
                 val_acc = validate(classifier, dev, dl_val)
-                print(f"Step {step+1}, Validation Accuracy: {val_acc*100:.2f}%")
+                _logger.info(
+                    f"Epoch {epoch+1}, Step {step+1}, Validation Accuracy: {val_acc*100:.2f}%"
+                )
                 if val_acc > best_acc:
                     scripted = torch.jit.script(classifier)
                     torch.jit.save(scripted, "ucf101_classifier_best.pt")
                     best_acc = val_acc
-            if step >= cfg["num_train_steps"]:
-                break
             step += 1
+        sched.step()
 
     return classifier
 
@@ -234,12 +235,21 @@ def test(cfg, classifier):
         pred = all_logits.mean(0)
         total_correct += pred.argmax(0).item() == label
         total += 1
-        print(f"{vidx+1}/{n_videos}, acc {total_correct/total}")
+        _logger.info(f"{vidx+1}/{n_videos}, acc {total_correct/total}")
 
-    print(f"acc {total_correct/total}")
+    _logger.info(f"acc {total_correct/total}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s: %(message)s",
+        handlers=[
+            logging.FileHandler("ucf101.log.txt", mode="w"),
+            logging.StreamHandler(),
+        ],
+    )
+
     import os
 
     cfg = {
@@ -249,8 +259,7 @@ if __name__ == "__main__":
         "ucf101_workers": 10,
         "dl_workers": 4,
         "hidden_sizes": [64, 128, 256, 256],
-        "num_train_steps": 20000,
-        "num_test_steps": 100,
+        "num_epochs": 10,
         "batch_size": 16,
         "lr": 1e-3,
     }
