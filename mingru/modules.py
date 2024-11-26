@@ -216,7 +216,7 @@ class MinGRU(torch.nn.Module):
 
             # Apply dropout (except for last)
             is_not_last = lidx < (self.num_layers - 1)
-            if is_not_last:
+            if is_not_last and (self.dropout > 0):
                 out = torch.nn.functional.dropout(
                     out, p=self.dropout, training=self.training
                 )
