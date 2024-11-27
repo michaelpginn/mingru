@@ -149,3 +149,32 @@ Per default, the example is configured for a small usecase (sequence length 64, 
 
 Task is based on
 > Gu, Albert, and Tri Dao. "Mamba: Linear-time sequence modeling with selective state spaces." (2023).
+
+### Video Classification
+Trains a video classification network using convolutional MinGRUs from scratch using UCF101 train/test splits. Mimicks the
+architecture of 
+
+> Ballas, Nicolas, Li Yao1 Chris Pal, and Aaron Courville. "Delving deeper into convolution networks for learning video representation." (2015).
+
+On fold 1 this achieves a validation accuracy 98% and 64% on test. This is quite expected given that pretraining was done on ImageNet only. We expect much better test results when pretraining is done on larger video action datasets.
+
+
+```python
+python ucf101_classification.py -f 1 train
+    ...
+    2024-11-26 15:58:18,742: Epoch 7, Step 75961, Loss: 0.0588, Accuracy: 100.00%
+    2024-11-26 15:58:25,421: Epoch 7, Step 75981, Loss: 0.0096, Accuracy: 100.00%
+    2024-11-26 15:58:37,921: Epoch 7, Step 76000, Validation Accuracy: 98.00%, Validation Loss: 0.01
+```
+
+Test protocol is based on Paper using 25 clips from each video and perform average/majority voting
+
+```python
+python ucf101_classification.py -f 1 test
+    ...
+    2024-11-27 08:05:02,508: 3780/3783, acc 0.64
+    2024-11-27 08:05:04,657: 3781/3783, acc 0.64
+    2024-11-27 08:05:06,810: 3782/3783, acc 0.64
+    2024-11-27 08:05:09,290: 3783/3783, acc 0.64
+    2024-11-27 08:05:09,290: test acc 0.64
+```
