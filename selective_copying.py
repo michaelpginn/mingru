@@ -2,10 +2,6 @@
 
 Christoph Heind, 2024
 https://github.com/cheind/mingru
-
-Based on:
-    Were RNNs All We Needed?
-    Leo Feng, 2024, https://arxiv.org/pdf/2410.01201v1
 """
 
 from typing import Final
