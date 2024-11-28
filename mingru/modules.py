@@ -171,6 +171,7 @@ class MinGRU(torch.nn.Module):
         self,
         x: torch.Tensor,
         h: list[torch.Tensor] | None = None,
+        seq_lengths: torch.Tensor | None = None,
     ):
         """Evaluate the MinGRU.
 
@@ -178,6 +179,8 @@ class MinGRU(torch.nn.Module):
             x: (B,S,input_size) input features
             h: optional list of tensors with shape (B,1,hidden_sizes[i])
                 containing previous hidden states.
+            seq_lengths: (B,) optional tensor with (non-pad token) lengths
+                of each sequence in the batch
 
         Returns:
             out: (B,S,hidden_sizes[-1]) outputs of the last layer
@@ -204,7 +207,11 @@ class MinGRU(torch.nn.Module):
             # (B,S,hidden_dims)
 
             # Save final hidden state of layer
-            next_hidden.append(out[:, -1:])
+            if seq_lengths is not None:
+                last_hidden_for_layer = out[torch.arange(len(out)), seq_lengths].unsqueeze(1)
+            else:
+                last_hidden_for_layer = out[:, -1]
+            next_hidden.append(last_hidden_for_layer)
 
             # Add skip connection
             if self.residual:
